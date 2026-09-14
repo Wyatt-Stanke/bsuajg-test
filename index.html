@@ -15,7 +15,7 @@
         <meta http-equiv="pragma" content="no-cache"/>
 
         <!-- Set the title bar of the page -->
-        <title></title>
+        <title>Barkley, Shut Up and Jam: Gaiden</title>
 
         <!-- Custom PreStyle code is injected here -->
         
@@ -93,6 +93,9 @@
         <!-- Custom BodyStart code is injected here -->
         
 
+        <!-- Start on a click, so the browser allows audio from the first sound. Enabled once the game code has loaded. -->
+        <button id="start" disabled onclick="this.remove(); GameMaker_Init();">Start</button>
+
         <div class="gm4html5_div_class" id="gm4html5_div_id">
             
             <!-- Builtin injector for splash screen -->
@@ -110,24 +113,21 @@
             <!-- Custom PostCanvas code is injected here -->
             
         </div>
+        <!-- Safari decodes Ogg Vorbis with the first ~26 ms of each sound missing; report no Ogg support so the runtime loads the MP3s. -->
+        <script>
+            HTMLMediaElement.prototype.canPlayType = ((canPlayType) => function (type) {
+                return /ogg/i.test(type) ? "" : canPlayType.call(this, type);
+            })(HTMLMediaElement.prototype.canPlayType);
+        </script>
+
 
         <!-- Run the game code -->
-        <script>
-        // Safari test: report no Ogg Vorbis support so the runtime loads the .mp3 of every sound.
-        // Add ?ogg to the URL for the original behaviour.
-        if (!/[?&]ogg\b/.test(location.search)) {
-          const canPlayType = HTMLMediaElement.prototype.canPlayType;
-          HTMLMediaElement.prototype.canPlayType = function (type) {
-            return /ogg/i.test(type) ? "" : canPlayType.call(this, type);
-          };
-        }
-        </script>
-        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1328445466"></script>
+        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1636811777"></script>
 
         <!-- Builtin injector for injecting runner path -->
         
 
-        <script>window.onload = GameMaker_Init;</script>
+        <script>window.onload = () => (document.getElementById("start").disabled = false);</script>
 
         <!-- Builtin injector for injecting google analytics code -->
         
