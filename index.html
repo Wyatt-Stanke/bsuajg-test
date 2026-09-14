@@ -112,6 +112,16 @@
         </div>
 
         <!-- Run the game code -->
+        <script>
+        // Safari test: report no Ogg Vorbis support so the runtime loads the .mp3 of every sound.
+        // Add ?ogg to the URL for the original behaviour.
+        if (!/[?&]ogg\b/.test(location.search)) {
+          const canPlayType = HTMLMediaElement.prototype.canPlayType;
+          HTMLMediaElement.prototype.canPlayType = function (type) {
+            return /ogg/i.test(type) ? "" : canPlayType.call(this, type);
+          };
+        }
+        </script>
         <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1328445466"></script>
 
         <!-- Builtin injector for injecting runner path -->
