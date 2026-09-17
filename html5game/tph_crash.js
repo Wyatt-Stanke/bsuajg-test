@@ -3,9 +3,18 @@
 // records the key events between steps. After an uncaught error, or when the player types BUG (in capitals), the page
 // shows a report: the checkpoint about 10 s back, the frame times and key events since, and the error or the state
 // the game has now, gzipped and Base64-encoded. `node migrate/fuzz.mjs replay <build> <report file>` replays it.
-var crash_steps = [], crash_events = [], crash_base = 0, crash_n = 0; // frame times of steps crash_base..crash_n-1
-var crash_points = [], crash_pending = [], crash_held = {}, crash_typed = '', crash_typed_at = 0;
-var crash_want = 0, crash_done = false, crash_window = 300; // steps (10 s at 30 a second) a report reaches back
+var crash_steps = [],
+  crash_events = [],
+  crash_base = 0,
+  crash_n = 0; // frame times of steps crash_base..crash_n-1
+var crash_points = [],
+  crash_pending = [],
+  crash_held = {},
+  crash_typed = '',
+  crash_typed_at = 0;
+var crash_want = 0,
+  crash_done = false,
+  crash_window = 300; // steps (10 s at 30 a second) a report reaches back
 
 // A checkpoint in the step about to run (before its crash_step); state '' (a menu) forgets them all.
 function crash_put(state, latch) {
@@ -67,18 +76,44 @@ function crash_record(type, e) {
     if (Date.now() - crash_typed_at > 3000) crash_typed = '';
     crash_typed = (crash_typed + e.key).slice(-3);
     crash_typed_at = Date.now();
-    if (crash_typed === 'BUG') (crash_want = 1), (crash_typed = '');
+    if (crash_typed === 'BUG') ((crash_want = 1), (crash_typed = ''));
   } else if (e.key && e.key.length === 1) crash_typed = '';
 }
-addEventListener('keydown', function (e) { crash_record(1, e); }, true);
-addEventListener('keyup', function (e) { crash_record(0, e); }, true);
+addEventListener(
+  'keydown',
+  function (e) {
+    crash_record(1, e);
+  },
+  true,
+);
+addEventListener(
+  'keyup',
+  function (e) {
+    crash_record(0, e);
+  },
+  true,
+);
 // the window's own (the runtime clears its keys on blur), not an element's
-addEventListener('blur', function (e) { if (e.target === window) crash_record(2, null); }, true);
-addEventListener('focus', function (e) { if (e.target === window) crash_record(3, null); }, true);
+addEventListener(
+  'blur',
+  function (e) {
+    if (e.target === window) crash_record(2, null);
+  },
+  true,
+);
+addEventListener(
+  'focus',
+  function (e) {
+    if (e.target === window) crash_record(3, null);
+  },
+  true,
+);
 
 addEventListener('error', function (e) {
   if (crash_done) return;
-  var x = e.error, message, stack;
+  var x = e.error,
+    message,
+    stack;
   if (x && typeof x === 'object') {
     message = x.gmllongMessage || x.gmlmessage || x.message;
     stack = x.gmlstacktrace || x.stack;
@@ -91,7 +126,8 @@ addEventListener('error', function (e) {
 function crash_report(kind, error, end) {
   if (crash_done) return;
   if (kind === 'crash') crash_done = true; // the game has stopped
-  var cp = crash_points[0] || null, from = cp ? cp.step : crash_base;
+  var cp = crash_points[0] || null,
+    from = cp ? cp.step : crash_base;
   var script = document.querySelector('script[src*="html5game/"]');
   var report = {
     version: 1,
@@ -102,14 +138,22 @@ function crash_report(kind, error, end) {
     agent: navigator.userAgent,
     window: [innerWidth, innerHeight, devicePixelRatio],
     error: error,
-    checkpoint: cp && { state: cp.state, latch: cp.latch, held: cp.held },
+    checkpoint: cp && { state: cp.state, latch: cp.latch, held: cp.held, files: crash_files() },
     // frame times from the checkpoint's step on, key events [step - from, type (0 up, 1 down, 2 blur, 3 focus),
     // key code, key]; events after the last step go with a step that has no frame time
     steps: crash_steps.slice(from - crash_base),
     events: crash_events
-      .filter(function (e) { return e[0] >= from; })
-      .map(function (e) { return [e[0] - from].concat(e.slice(1)); })
-      .concat(crash_pending.map(function (e) { return [crash_n - from].concat(e); })),
+      .filter(function (e) {
+        return e[0] >= from;
+      })
+      .map(function (e) {
+        return [e[0] - from].concat(e.slice(1));
+      })
+      .concat(
+        crash_pending.map(function (e) {
+          return [crash_n - from].concat(e);
+        }),
+      ),
     end: end || null,
   };
   crash_encode(JSON.stringify(report)).then(function (text) {
@@ -120,10 +164,23 @@ function crash_report(kind, error, end) {
   });
 }
 
+// The game's files (saves, settings): the runtime keeps them in browser storage
+function crash_files() {
+  var files = {};
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k.indexOf('barkley.') !== 0) files[k] = localStorage.getItem(k);
+    }
+  } catch (e) {}
+  return files;
+}
+
 function crash_encode(json) {
   var gz = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
   return new Response(gz).arrayBuffer().then(function (buf) {
-    var bytes = new Uint8Array(buf), s = '';
+    var bytes = new Uint8Array(buf),
+      s = '';
     for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return 'BARKLEY-CRASH-1:' + btoa(s).replace(/.{100}/g, '$&\n');
   });
@@ -159,14 +216,26 @@ function crash_show(kind, text) {
   };
   var copy = button('Copy', function () {
     area.select();
-    var done = function () { copy.textContent = 'Copied'; };
-    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () { document.execCommand('copy') && done(); });
+    var done = function () {
+      copy.textContent = 'Copied';
+    };
+    if (navigator.clipboard)
+      navigator.clipboard.writeText(text).then(done, function () {
+        document.execCommand('copy') && done();
+      });
     else if (document.execCommand('copy')) done();
   });
-  if (kind !== 'crash') button('Close', function () { box.remove(); });
+  if (kind !== 'crash')
+    button('Close', function () {
+      box.remove();
+    });
   // keep keys away from the game (it cancels them all)
-  box.addEventListener('keydown', function (e) { e.stopPropagation(); });
-  box.addEventListener('keyup', function (e) { e.stopPropagation(); });
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+  });
+  box.addEventListener('keyup', function (e) {
+    e.stopPropagation();
+  });
   box.append(p, area, row);
   document.body.appendChild(box);
 }
