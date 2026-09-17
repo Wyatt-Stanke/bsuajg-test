@@ -7,7 +7,7 @@
     <head>
         <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name ="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+        <meta name ="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta charset="utf-8"/>
 
@@ -28,6 +28,11 @@
                 margin: 0px;
                 padding: 0px;
                 border: 0px;
+                /* For the touch overlay: no pull-to-refresh, selection loupe or long-press callout. */
+                overscroll-behavior: none;
+                -webkit-user-select: none;
+                user-select: none;
+                -webkit-touch-callout: none;
             }
 
             canvas {
@@ -122,7 +127,7 @@
 
 
         <!-- Run the game code -->
-        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1356978932"></script>
+        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1446504477"></script>
 
         <!-- Builtin injector for injecting runner path -->
         
