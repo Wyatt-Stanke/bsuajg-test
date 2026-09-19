@@ -107,45 +107,52 @@ function saves_write(json) {
 function saves_panel() {
   var old = document.getElementById('saves-panel');
   if (old) old.remove();
-  var box = document.createElement('div');
-  box.id = 'saves-panel';
-  box.style.cssText =
-    'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);color:#fff;font:15px/1.4 sans-serif;' +
-    'display:flex;flex-direction:column;gap:8px;padding:16px;box-sizing:border-box;overflow:auto';
-  var text = function (tag, s) {
+  // plain DOM; index.html's stylesheet lays it out (.ui-panel and friends)
+  var el = function (parent, tag, cls, s) {
     var e = document.createElement(tag);
-    e.style.margin = '0';
-    e.textContent = s;
+    if (cls) e.className = cls;
+    if (s) e.textContent = s;
+    if (parent) parent.appendChild(e);
     return e;
   };
-  var area = function (readOnly, placeholder) {
-    var a = document.createElement('textarea');
-    a.readOnly = readOnly;
-    a.placeholder = placeholder || '';
-    a.style.cssText = 'flex:1;min-height:70px;width:100%;box-sizing:border-box;font:12px monospace';
-    return a;
-  };
-  var row = function () {
-    var r = document.createElement('div');
-    r.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center';
-    return r;
-  };
-  var button = function (parent, label, fn) {
-    var b = document.createElement('button');
-    b.textContent = label;
-    b.style.cssText = 'font:inherit;padding:6px 16px';
+  var button = function (parent, label, cls, fn) {
+    var b = el(parent, 'button', cls, label);
+    b.type = 'button';
     b.onclick = fn;
-    parent.appendChild(b);
     return b;
   };
+  var slots = function (n) {
+    return n + (n === 1 ? ' save slot' : ' save slots');
+  };
 
-  var status = text('p', '');
-  status.style.color = '#ffd';
-  var out = area(true, ''),
-    outRow = row();
-  var inp = area(false, 'Paste a save code here'),
-    inRow = row();
-  var copy = button(outRow, 'Copy', function () {
+  var box = el(null, 'div', 'ui-panel');
+  box.id = 'saves-panel';
+  box.tabIndex = -1;
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-labelledby', 'saves-title');
+  var close = function () {
+    box.remove();
+  };
+  var head = el(box, 'div', 'ui-head');
+  el(head, 'h2', '', 'Saves').id = 'saves-title';
+  button(head, 'Close', 'ui-link', close);
+  el(
+    box,
+    'p',
+    'ui-mute',
+    'Saves live in this browser only. Copy the code to take your game to another browser or device, or to keep it ' +
+      'safe before clearing site data. Keys, screen and volume stay on each device.',
+  );
+  var status = el(box, 'p', 'ui-status');
+
+  var cols = el(box, 'div', 'ui-cols');
+  var exp = el(cols, 'section', 'ui-col');
+  el(exp, 'h3', '', 'Export');
+  var out = el(exp, 'textarea', 'ui-code');
+  out.readOnly = true;
+  out.setAttribute('aria-label', 'Save code from this browser');
+  var outRow = el(exp, 'div', 'ui-row');
+  var copy = button(outRow, 'Copy', 'ui-btn primary', function () {
     out.select();
     var done = function () {
       copy.textContent = 'Copied';
@@ -153,7 +160,7 @@ function saves_panel() {
     if (navigator.clipboard) navigator.clipboard.writeText(out.value).then(done, done);
     else if (document.execCommand('copy')) done();
   });
-  button(outRow, 'Download', function () {
+  var download = button(outRow, 'Download', 'ui-btn', function () {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([out.value], { type: 'text/plain' }));
     a.download = 'barkley-saves-' + new Date().toISOString().slice(0, 10) + '.txt';
@@ -162,67 +169,64 @@ function saves_panel() {
       URL.revokeObjectURL(a.href);
     }, 10000);
   });
-  button(inRow, 'Import', function () {
+  copy.disabled = download.disabled = true;
+
+  var imp = el(cols, 'section', 'ui-col');
+  el(imp, 'h3', '', 'Import');
+  var inp = el(imp, 'textarea', 'ui-code');
+  inp.placeholder = 'Paste a save code here';
+  inp.setAttribute('aria-label', 'Save code to import');
+  var inRow = el(imp, 'div', 'ui-row');
+  button(inRow, 'Import', 'ui-btn primary', function () {
     saves_decode(inp.value)
       .then(saves_write)
       .then(
         function (n) {
           status.textContent =
-            'Imported ' + n + ' save slot(s). Close this, leave Configuration, and open Load Datafile to see them.';
+            'Imported ' + slots(n) + '. Close this, leave Configuration and open Load Datafile to see them.';
         },
         function (e) {
           status.textContent = 'Could not import: ' + (e && e.message ? e.message : e);
         },
       );
   });
-  var file = document.createElement('input');
+  var file = el(null, 'input');
   file.type = 'file';
   file.accept = 'text/plain,.txt';
-  file.style.font = 'inherit';
+  file.hidden = true;
   file.onchange = function () {
     if (file.files[0])
       file.files[0].text().then(function (t) {
         inp.value = t;
-        status.textContent = 'Loaded ' + file.files[0].name + '. Press Import to write it into this browser.';
+        status.textContent = 'Opened ' + file.files[0].name + '. Press Import to write it into this browser.';
       });
   };
-  inRow.appendChild(file);
-  var closeRow = row();
-  button(closeRow, 'Close', function () {
-    box.remove();
+  button(inRow, 'Open file…', 'ui-btn', function () {
+    file.click();
   });
+  inRow.appendChild(file);
 
-  // the game cancels every key it sees, so keep typing in here away from it
+  // The game cancels every key it sees, so keep typing in here away from it. Only keys pressed in here: the key
+  // that opened the panel was pressed in the game, and its release must reach the game or it stays held.
+  var down = {};
   box.addEventListener('keydown', function (e) {
     e.stopPropagation();
+    down[e.code] = 1;
+    if (e.key === 'Escape') close();
   });
   box.addEventListener('keyup', function (e) {
-    e.stopPropagation();
+    if (down[e.code]) (delete down[e.code], e.stopPropagation());
   });
-  box.append(
-    text('h2', 'Save data'),
-    text(
-      'p',
-      'Saves live in this browser only. Copy the code below to carry your game to another browser, another device, ' +
-        'or back after clearing site data. Settings (keys, screen, volume) stay on each device.',
-    ),
-    text('p', 'This browser:'),
-    out,
-    outRow,
-    text('p', 'Import a code:'),
-    inp,
-    inRow,
-    status,
-    closeRow,
-  );
   document.body.appendChild(box);
+  box.focus();
   return {
     say: function (s) {
       status.textContent = s;
     },
     fill: function (t, n) {
       out.value = t;
-      status.textContent = n + ' save slot(s) in this browser.';
+      copy.disabled = download.disabled = false;
+      status.textContent = slots(n) + ' in this browser.';
     },
   };
 }

@@ -9,6 +9,8 @@
 // The handler is looked up at event time, never cached: it is null until GameMaker_Init runs and is set
 // back to null at game end.
 //
+// It builds plain DOM and SVG; the style sheet is in index.html (#gmtouch, .gmt-*).
+//
 // Two coordinate systems meet here. The overlay lives in CSS pixels; GML's window/canvas coordinates are
 // device pixels once the DPR fix is on. touch_px() is the only place that converts.
 
@@ -97,6 +99,7 @@ function touch_up(k) {
     return;
   }
   touch_held[k] = false; touch_send(touch_key[k], false);
+  touch_paint();                           // a release owed from a short tap lands after the pointerup's paint
 }
 // Sliding between buttons must never hold both: the incoming key waits for the outgoing key to finish
 // paying off its minimum hold, so a fast A->B roll still sends a real A press and then a real B press.
@@ -108,7 +111,7 @@ function touch_swap(r, k) {
   if (wait <= 0) { touch_down(k); touch_buzz(8); return; }
   setTimeout(function () {
     if (r.k !== k) return;                 // the finger moved on again while the press was waiting
-    touch_down(k); touch_buzz(8);
+    touch_down(k); touch_buzz(8); touch_paint();
     if (r.up) touch_up(k);                 // it already lifted: land it as a tap, never a stuck key
   }, wait + 1);
 }
@@ -343,14 +346,15 @@ function touch_paint() {
   var L = touch_L, d = touch_dir, c = TOUCH_CTX[touch_ctx];
   var gd = touch_el('g', { opacity: c[0], class: 'gmt-fade' });
   var gb = touch_el('g', { opacity: c[1], class: 'gmt-fade' });
-  gb.appendChild(touch_el('circle', { cx: L.gear.x, cy: L.gear.y, r: L.gear.r, class: 'gmt-gear' }));
-  var gt = touch_el('text', { x: L.gear.x, y: L.gear.y, class: 'gmt-label', 'font-size': 12 });
-  gt.textContent = '⚙'; gb.appendChild(gt);
+  var gx = L.gear.x - 6, gy = L.gear.y;
+  gb.appendChild(touch_el('circle', { cx: L.gear.x, cy: gy, r: L.gear.r, class: 'gmt-gear' }));
+  gb.appendChild(touch_el('path', { class: 'gmt-icon',
+    d: 'M' + gx + ' ' + (gy - 4) + 'h12M' + gx + ' ' + gy + 'h12M' + gx + ' ' + (gy + 4) + 'h12' }));
   for (var i = 0; i < L.buttons.length; i++) {
     var b = L.buttons[i], on = !!touch_held[b.k];
     if (b.pill) {
       var w = b.r * 3.4, h = b.r * 1.5;
-      gb.appendChild(touch_el('rect', { x: b.x - w / 2, y: b.y - h / 2, width: w, height: h, rx: h / 2,
+      gb.appendChild(touch_el('rect', { x: b.x - w / 2, y: b.y - h / 2, width: w, height: h,
         class: 'gmt-btn' + (on ? ' on' : '') }));
     } else gb.appendChild(touch_el('circle', { cx: b.x, cy: b.y, r: b.r, class: 'gmt-btn' + (on ? ' on' : '') }));
     var t = touch_el('text', { x: b.x, y: b.y, class: 'gmt-label' + (on ? ' on' : ''),
@@ -391,7 +395,7 @@ function touch_cross(cx, cy, L, w2, r) {
 }
 function touch_draw_dpad(g, L, d) {
   var cx = L.dirCenter.x, cy = L.dirCenter.y, R = L.dpadR;
-  var arm = R * 0.92, w = R * 0.68, r = w * 0.28;
+  var arm = R * 0.92, w = R * 0.68, r = w * 0.08;
   g.appendChild(touch_el('path', { d: touch_cross(cx, cy, arm, w / 2, r), class: 'gmt-dpad' }));
   var s = d.sector, lit = [];
   if (s) {
@@ -471,47 +475,6 @@ function touch_pin() {
 function touch_init() {
   if (touch_ready) return;
   touch_load();
-  var css = document.createElement('style');
-  css.textContent =
-    ':root{--touch-top:env(safe-area-inset-top,0px);--touch-bottom:env(safe-area-inset-bottom,0px);' +
-    '--touch-left:env(safe-area-inset-left,0px);--touch-right:env(safe-area-inset-right,0px)}' +
-    '#gmtouch{position:fixed;inset:0;z-index:2147483000;pointer-events:none;display:none;' +
-    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;-webkit-user-select:none;user-select:none}' +
-    '#gmtouch-hit{position:absolute;inset:0;pointer-events:auto;touch-action:none}' +
-    '#gmtouch svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}' +
-    '.gmt-fade{transition:opacity .45s ease}' +
-    '.gmt-btn{fill:rgba(255,255,255,.085);stroke:rgba(255,255,255,.30);stroke-width:1.15;' +
-    'transition:fill .06s,stroke .06s}' +
-    '.gmt-btn.on{fill:rgba(255,176,58,.26);stroke:rgba(255,176,58,.85)}' +
-    '.gmt-label{fill:rgba(255,255,255,.62);text-anchor:middle;dominant-baseline:central;letter-spacing:.05em;' +
-    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-    '.gmt-label.on{fill:#ffb03a}' +
-    '.gmt-ring{fill:rgba(255,255,255,.028);stroke:rgba(255,255,255,.22);stroke-width:1}' +
-    '.gmt-knob{fill:rgba(255,255,255,.13);stroke:rgba(255,255,255,.34);stroke-width:1;transition:fill .07s,stroke .07s}' +
-    '.gmt-knob.on{fill:rgba(255,176,58,.20);stroke:rgba(255,176,58,.52)}' +
-    '.gmt-ghost{fill:none;stroke:rgba(255,255,255,.10);stroke-width:1;stroke-dasharray:2 6}' +
-    '.gmt-dpad{fill:rgba(255,255,255,.06);stroke:rgba(255,255,255,.24);stroke-width:1.15}' +
-    '.gmt-arm{fill:rgba(255,176,58,.30)}.gmt-tick{fill:rgba(255,255,255,.30)}' +
-    '.gmt-gear{fill:rgba(255,255,255,.055);stroke:rgba(255,255,255,.16);stroke-width:1}' +
-    '#gmtouch-sheet{position:absolute;left:0;right:0;bottom:0;background:rgba(10,11,14,.97);' +
-    'border-top:1px solid #262c38;padding:16px;padding-bottom:calc(20px + var(--touch-bottom));' +
-    'box-sizing:border-box;display:none;flex-direction:column;gap:13px;pointer-events:auto;color:#e8eaee}' +
-    '#gmtouch-sheet h3{margin:0;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#79839a;font-weight:500}' +
-    '.gmt-head{display:flex;justify-content:space-between;align-items:baseline}' +
-    '.gmt-row{display:flex;justify-content:space-between;align-items:center;gap:12px}' +
-    '.gmt-lab{font-size:12px}.gmt-hint{font-size:10px;color:#5a6274;margin-top:2px}' +
-    '.gmt-seg{display:flex;border:1px solid #1e222b;border-radius:6px;overflow:hidden;flex:0 0 auto}' +
-    '.gmt-seg button{appearance:none;border:0;background:transparent;color:#79839a;font:inherit;font-size:11px;' +
-    'padding:8px 11px;cursor:pointer}' +
-    '.gmt-seg button+button{border-left:1px solid #1e222b}' +
-    '.gmt-seg button[aria-pressed="true"]{background:rgba(255,176,58,.14);color:#ffb03a}' +
-    '#gmtouch-done{appearance:none;background:transparent;border:0;color:#e8eaee;font:inherit;font-size:12px;cursor:pointer}' +
-    '#gmtouch-note{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;' +
-    'justify-content:center;gap:14px;background:rgba(8,9,11,.82);pointer-events:auto;color:#e8eaee;text-align:center;padding:24px}' +
-    '#gmtouch-note p{margin:0;font-size:13px;line-height:1.5;max-width:30ch}' +
-    '#gmtouch-note button{appearance:none;background:rgba(255,176,58,.16);border:1px solid rgba(255,176,58,.6);' +
-    'color:#ffb03a;font:inherit;font-size:12px;padding:10px 16px;border-radius:7px;cursor:pointer}';
-  document.head.appendChild(css);
 
   touch_root = document.createElement('div'); touch_root.id = 'gmtouch';
   touch_hit = document.createElement('div'); touch_hit.id = 'gmtouch-hit';
@@ -522,7 +485,7 @@ function touch_init() {
   var head = document.createElement('div'); head.className = 'gmt-head';
   var h3 = document.createElement('h3'); h3.textContent = 'Touch controls';
   var done = document.createElement('button');
-  done.type = 'button'; done.id = 'gmtouch-done'; done.textContent = 'Done ✕';
+  done.type = 'button'; done.id = 'gmtouch-done'; done.className = 'ui-link'; done.textContent = 'Done';
   done.onclick = touch_close_sheet;
   head.appendChild(h3); head.appendChild(done);
   touch_sheet.appendChild(head);
@@ -540,7 +503,7 @@ function touch_init() {
   var np = document.createElement('p');
   np.textContent = 'SET KEYS needs a keyboard. It records the next seven keys you press and has no cancel.';
   var nb = document.createElement('button');
-  nb.type = 'button'; nb.textContent = 'Restore default keys';
+  nb.type = 'button'; nb.className = 'ui-btn primary'; nb.textContent = 'Restore default keys';
   nb.onclick = touch_defaults;
   touch_note.appendChild(np); touch_note.appendChild(nb);
 

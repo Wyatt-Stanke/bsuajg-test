@@ -189,32 +189,45 @@ function crash_encode(json) {
 function crash_show(kind, text) {
   var old = document.getElementById('crash-report');
   if (old) old.remove();
+  // plain DOM; index.html's stylesheet lays it out (.ui-panel and friends)
+  var el = function (parent, tag, cls, s) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (s) e.textContent = s;
+    parent.appendChild(e);
+    return e;
+  };
   var box = document.createElement('div');
   box.id = 'crash-report';
-  box.style.cssText =
-    'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);color:#fff;font:16px/1.4 sans-serif;' +
-    'display:flex;flex-direction:column;gap:12px;padding:16px;box-sizing:border-box';
-  var p = document.createElement('p');
-  p.style.margin = '0';
-  p.textContent =
-    (kind === 'crash' ? 'The game crashed. ' : 'Bug report. ') +
-    'Please copy this report and send it along with a few words about what you were doing.' +
-    (kind === 'crash' ? ' Reload the page to play on.' : '');
-  var area = document.createElement('textarea');
-  area.readOnly = true;
-  area.value = text;
-  area.style.cssText = 'flex:1;min-height:0;width:100%;box-sizing:border-box;font:12px monospace';
-  var row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:8px';
-  var button = function (label, fn) {
-    var b = document.createElement('button');
-    b.textContent = label;
-    b.style.cssText = 'font:inherit;padding:6px 16px';
+  box.className = 'ui-panel';
+  box.tabIndex = -1;
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-labelledby', 'crash-title');
+  var head = el(box, 'div', 'ui-head');
+  el(head, 'h2', '', kind === 'crash' ? 'The game stopped' : 'Bug report').id = 'crash-title';
+  var close = function () {
+    box.remove();
+  };
+  var button = function (parent, label, cls, fn) {
+    var b = el(parent, 'button', cls, label);
+    b.type = 'button';
     b.onclick = fn;
-    row.appendChild(b);
     return b;
   };
-  var copy = button('Copy', function () {
+  if (kind !== 'crash') button(head, 'Close', 'ui-link', close);
+  el(
+    box,
+    'p',
+    'ui-mute',
+    'Copy this report and send it with a few words about what you were doing.' +
+      (kind === 'crash' ? ' Then reload the page to play on.' : ''),
+  );
+  var area = el(box, 'textarea', 'ui-code');
+  area.readOnly = true;
+  area.value = text;
+  area.setAttribute('aria-label', 'Report');
+  var row = el(box, 'div', 'ui-row');
+  var copy = button(row, 'Copy report', 'ui-btn primary', function () {
     area.select();
     var done = function () {
       copy.textContent = 'Copied';
@@ -225,17 +238,21 @@ function crash_show(kind, text) {
       });
     else if (document.execCommand('copy')) done();
   });
-  if (kind !== 'crash')
-    button('Close', function () {
-      box.remove();
+  if (kind === 'crash')
+    button(row, 'Reload', 'ui-btn', function () {
+      location.reload();
     });
-  // keep keys away from the game (it cancels them all)
+  // keep keys pressed in here away from the game (it cancels them all); a release of a key pressed in the game
+  // (the G of BUG) must still reach it
+  var down = {};
   box.addEventListener('keydown', function (e) {
     e.stopPropagation();
+    down[e.code] = 1;
+    if (e.key === 'Escape' && kind !== 'crash') close();
   });
   box.addEventListener('keyup', function (e) {
-    e.stopPropagation();
+    if (down[e.code]) (delete down[e.code], e.stopPropagation());
   });
-  box.append(p, area, row);
   document.body.appendChild(box);
+  box.focus();
 }

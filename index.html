@@ -14,6 +14,8 @@
         <!-- Installable as an app that opens full screen; import.mjs adds these files to html5game/ as Included Files. -->
         <link rel="manifest" href="html5game/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="html5game/icon-180.png" />
+        <!-- The page's font, Inter (SIL OFL 1.1; licence in inter-OFL.txt beside it), added by import.mjs like the icons -->
+        <link rel="preload" href="html5game/inter.woff2" as="font" type="font/woff2" crossorigin />
         <meta charset="utf-8"/>
 
         <!-- Builtin injector for disabling cache -->
@@ -25,12 +27,47 @@
         <!-- Custom PreStyle code is injected here -->
         
 
-        <!-- Set the background colour of the document -->
+        <!-- The page around the game. One quiet system: black, white, Helvetica, flush left, hairline rules; an active
+             control inverts to white. The Saves, crash and touch extensions build plain DOM and are styled here. -->
         <style>
+            @font-face {
+                font-family: "Inter";
+                src: url("html5game/inter.woff2") format("woff2");
+                font-weight: 100 900;
+                font-style: normal;
+                font-display: swap;
+            }
+            /* The Start word's loading fill; registered so it can animate between progress reports */
+            @property --p {
+                syntax: "<percentage>";
+                inherits: false;
+                initial-value: 0%;
+            }
+            :root {
+                --ink: #ffffff;
+                --paper: #000000;
+                --mute: #8f8f8f; /* solid, so overlapping glyphs in the tight Start word do not double up */
+                --rule: rgba(255, 255, 255, 0.24);
+                --font: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
+                --mono: ui-monospace, Menlo, Consolas, monospace;
+                --g: 16px;
+                /* Safe-area insets, for the touch overlay's layout and the panels' padding */
+                --touch-top: env(safe-area-inset-top, 0px);
+                --touch-bottom: env(safe-area-inset-bottom, 0px);
+                --touch-left: env(safe-area-inset-left, 0px);
+                --touch-right: env(safe-area-inset-right, 0px);
+                color-scheme: dark;
+            }
+            @media (min-width: 720px) {
+                :root {
+                    --g: 32px;
+                }
+            }
             body {
                 /* Igor writes the game's black as "#0", which is not CSS, so the page showed white before Start. */
-                background: #000000;
-                color: #cccccc;
+                background: var(--paper);
+                color: var(--ink);
+                font: 15px/1.45 var(--font);
                 margin: 0px;
                 padding: 0px;
                 border: 0px;
@@ -39,6 +76,7 @@
                 -webkit-user-select: none;
                 user-select: none;
                 -webkit-touch-callout: none;
+                -webkit-font-smoothing: antialiased;
             }
 
             canvas {
@@ -58,117 +96,396 @@
                 width: 100%;
                 height: 100%;
             }
-            
-            /* The Start button: large and centred, larger still on a touch screen. */
-            #start {
-                position: fixed;
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%, -50%);
-                z-index: 10;
-                padding: 0.45em 1.4em;
-                font: bold clamp(32px, 8vmin, 72px)/1 "Courier New", Courier, monospace;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: #ffffff;
-                background: #d8581c;
-                border: 0.08em solid #ffffff;
-                border-radius: 0.2em;
+
+            /* Buttons: square, hairline, 44 px tall; .primary is filled; .ui-link is bare text. */
+            .ui-btn {
+                appearance: none;
+                box-sizing: border-box;
+                min-height: 44px;
+                padding: 0 20px;
+                font: 500 15px/1 var(--font);
+                color: var(--ink);
+                background: transparent;
+                border: 1px solid var(--ink);
+                border-radius: 0;
                 cursor: pointer;
                 touch-action: manipulation;
             }
-            #start:hover:not(:disabled), #start:focus-visible {
-                background: #f07a30;
+            .ui-btn:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.14);
+            }
+            .ui-btn.primary {
+                color: var(--paper);
+                background: var(--ink);
+            }
+            .ui-btn.primary:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.84);
+            }
+            .ui-btn:disabled {
+                opacity: 0.35;
+                cursor: default;
+            }
+            .ui-link {
+                appearance: none;
+                min-height: 44px;
+                padding: 0;
+                font: 500 15px/1 var(--font);
+                color: var(--ink);
+                background: none;
+                border: 0;
+                cursor: pointer;
+                touch-action: manipulation;
+            }
+            .ui-link:hover {
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+            .ui-btn:focus-visible,
+            .ui-link:focus-visible,
+            .ui-code:focus-visible {
+                outline: 2px solid var(--ink);
+                outline-offset: 2px;
+            }
+
+            /* The Start screen: the whole page is the button, so a click or tap anywhere starts. The words sit on the
+               left edge of the picture to come (4:3, centred), in the middle of the height. */
+            #start {
+                position: fixed;
+                inset: 0;
+                z-index: 10;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                margin: 0;
+                padding: 0 max(var(--g), calc((100vw - 100vh * 4 / 3) / 2 + var(--g)));
+                color: var(--ink);
+                background: var(--paper);
+                border: 0;
+                font: 15px/1.3 var(--font);
+                text-align: left;
+                cursor: pointer;
+                touch-action: manipulation;
+            }
+            #start:focus {
                 outline: none;
             }
             #start:disabled {
-                opacity: 0.5;
                 cursor: default;
             }
+            #start .name {
+                color: var(--mute);
+            }
+            /* While the game loads, the word fills from grey to white, left to right */
+            #start .word {
+                margin: 8px 0 16px -0.04em;
+                font-size: clamp(56px, 14vmin, 128px);
+                font-weight: 700;
+                line-height: 0.9;
+                letter-spacing: -0.02em;
+                color: transparent;
+                background: linear-gradient(to right, var(--ink) var(--p), var(--mute) var(--p));
+                -webkit-background-clip: text;
+                background-clip: text;
+                transition: --p 0.6s linear;
+            }
+            #start .hint {
+                color: var(--mute);
+            }
+            #start:disabled .key,
+            #start:disabled .touch,
+            #start:not(:disabled) .load {
+                display: none;
+            }
             @media (pointer: coarse) {
-                #start {
-                    font-size: clamp(40px, 11vmin, 96px);
+                #start .key {
+                    display: none;
                 }
+            }
+            @media not (pointer: coarse) {
+                #start .touch {
+                    display: none;
+                }
+            }
+            /* The runtime's own loading bar: the game loads behind the Start screen instead. */
+            #loading_screen {
+                display: none;
+            }
+
+            /* Panels over the game (install, Saves, crash report): a black sheet, a title and its hairline, flush-left
+               text in one column. Above the touch overlay, whose hit layer would otherwise take their taps. */
+            .ui-panel {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483600;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                gap: 24px;
+                padding: calc(var(--g) / 2 + var(--touch-top)) calc(var(--g) + var(--touch-right))
+                    calc(var(--g) + var(--touch-bottom)) calc(var(--g) + var(--touch-left));
+                overflow-y: auto;
+                color: var(--ink);
+                background: var(--paper);
+                font: 15px/1.45 var(--font);
+                -webkit-user-select: text;
+                user-select: text;
+            }
+            .ui-panel:focus {
+                outline: none;
+            }
+            .ui-panel[hidden] {
+                display: none;
+            }
+            .ui-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+                min-height: 44px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid var(--ink);
+            }
+            .ui-panel h2 {
+                margin: 0;
+                font: 700 22px/1.1 var(--font);
+                letter-spacing: -0.01em;
+            }
+            .ui-panel h3 {
+                margin: 0;
+                padding-top: 8px;
+                border-top: 1px solid var(--rule);
+                font: 700 12px/1.3 var(--font);
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .ui-panel p {
+                margin: 0;
+                max-width: 36em;
+            }
+            .ui-panel .ui-mute {
+                color: var(--mute);
+            }
+            .ui-panel .ui-status {
+                min-height: 1.45em;
+                font-weight: 700;
+            }
+            .ui-cols {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                gap: 32px;
+                flex: 1 0 auto;
+            }
+            @media (min-width: 720px) {
+                .ui-cols {
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                }
+            }
+            .ui-col {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                min-width: 0;
+            }
+            .ui-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .ui-code {
+                flex: 1 0 8em;
+                box-sizing: border-box;
+                width: 100%;
+                min-height: 8em;
+                padding: 8px;
+                font: 12px/1.4 var(--mono);
+                color: var(--ink);
+                background: transparent;
+                border: 1px solid var(--rule);
+                border-radius: 0;
+                resize: vertical;
+                word-break: break-all;
+            }
+            .ui-code::placeholder {
+                color: var(--mute);
+            }
+            .ui-foot {
+                display: grid;
+                gap: 8px;
             }
 
             /* The first-visit prompt on a phone or tablet to install the game as an app. */
-            #install {
-                position: fixed;
-                inset: 0;
-                z-index: 20;
-                align-items: center;
-                justify-content: center;
-                padding: 16px;
-                background: rgba(0, 0, 0, 0.85);
-                font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-                color: #ffffff;
+            #install .ui-steps {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+                counter-reset: step;
             }
-            #install:not([hidden]) {
-                display: flex;
+            #install .ui-steps li {
+                display: grid;
+                grid-template-columns: 2em 1fr;
+                padding: 12px 0;
+                border-top: 1px solid var(--rule);
+                counter-increment: step;
             }
-            #install .panel {
-                box-sizing: border-box;
-                width: 100%;
-                max-width: 26em;
-                max-height: 100%;
-                overflow-y: auto;
-                padding: 1.2em 1.3em;
-                background: #0d0d4d;
-                border: 3px solid #ffffff;
-                border-radius: 8px;
-            }
-            #install h2 {
-                margin: 0 0 0.5em;
-                font: bold 1.5em/1.15 "Courier New", Courier, monospace;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                color: #f07a30;
-            }
-            #install p {
-                margin: 0 0 0.8em;
-            }
-            #install .note {
-                font-size: 0.85em;
-                color: #c8c8e8;
+            #install .ui-steps li::before {
+                content: counter(step);
+                font-weight: 700;
             }
             #install svg {
                 width: 1.1em;
                 height: 1.1em;
                 vertical-align: -0.15em;
             }
-            #install button {
-                display: block;
-                width: 100%;
-                margin-top: 0.6em;
-                padding: 0.6em;
-                font: bold 1.1em/1 "Courier New", Courier, monospace;
-                letter-spacing: 0.06em;
-                text-transform: uppercase;
-                color: #ffffff;
-                background: transparent;
-                border: 2px solid #ffffff;
-                border-radius: 6px;
-                touch-action: manipulation;
+            #install .ui-foot {
+                margin-top: auto;
             }
-            #install #install-now {
-                background: #d8581c;
-            }
-            #install #install-now[hidden] {
+            #install-now[hidden] {
                 display: none;
             }
             @media (max-height: 500px) {
                 #install {
-                    padding: 8px;
+                    gap: 16px;
                     font-size: 14px;
-                    line-height: 1.35;
                 }
-                #install .panel {
-                    max-width: 40em;
-                    padding: 0.8em 1.1em;
+                #install .ui-steps li {
+                    padding: 8px 0;
                 }
-                #install p {
-                    margin-bottom: 0.5em;
+                #install .ui-foot {
+                    grid-auto-flow: column;
+                    grid-auto-columns: 1fr;
                 }
+            }
+
+            /* The touch overlay (touch.js): hairline shapes at low opacity; a pressed control fills white. */
+            #gmtouch {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483000;
+                display: none;
+                pointer-events: none;
+                font-family: var(--font);
+                -webkit-user-select: none;
+                user-select: none;
+            }
+            #gmtouch-hit {
+                position: absolute;
+                inset: 0;
+                pointer-events: auto;
+                touch-action: none;
+            }
+            #gmtouch svg {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                overflow: visible;
+                pointer-events: none;
+            }
+            .gmt-fade { transition: opacity 0.45s ease; }
+            .gmt-btn { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.36); stroke-width: 1; }
+            .gmt-btn.on { fill: rgba(255, 255, 255, 0.9); stroke: #ffffff; }
+            .gmt-label {
+                fill: rgba(255, 255, 255, 0.72);
+                font-family: var(--font);
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-anchor: middle;
+                dominant-baseline: central;
+            }
+            .gmt-label.on { fill: #000000; }
+            .gmt-ring { fill: rgba(255, 255, 255, 0.03); stroke: rgba(255, 255, 255, 0.22); stroke-width: 1; }
+            .gmt-knob { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.36); stroke-width: 1; }
+            .gmt-knob.on { fill: rgba(255, 255, 255, 0.34); stroke: rgba(255, 255, 255, 0.7); }
+            .gmt-ghost { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; stroke-dasharray: 2 6; }
+            .gmt-dpad { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
+            .gmt-arm { fill: rgba(255, 255, 255, 0.42); }
+            .gmt-tick { fill: rgba(255, 255, 255, 0.3); }
+            .gmt-gear { fill: rgba(255, 255, 255, 0.04); stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
+            .gmt-icon { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 1.25; }
+            /* Its settings sheet and the SET KEYS note */
+            #gmtouch-sheet {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                display: none;
+                flex-direction: column;
+                box-sizing: border-box;
+                padding: 4px calc(var(--g) + var(--touch-right)) calc(12px + var(--touch-bottom))
+                    calc(var(--g) + var(--touch-left));
+                color: var(--ink);
+                background: var(--paper);
+                border-top: 1px solid var(--ink);
+                pointer-events: auto;
+                font: 15px/1.3 var(--font);
+            }
+            .gmt-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            #gmtouch-sheet h3 {
+                margin: 0;
+                font: 700 12px/1.3 var(--font);
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .gmt-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+                padding: 10px 0;
+                border-top: 1px solid var(--rule);
+            }
+            .gmt-hint {
+                margin-top: 2px;
+                font-size: 12px;
+                color: var(--mute);
+            }
+            .gmt-seg {
+                display: flex;
+                flex: 0 0 auto;
+                border: 1px solid var(--ink);
+            }
+            .gmt-seg button {
+                appearance: none;
+                min-width: 44px;
+                min-height: 36px;
+                padding: 0 12px;
+                font: 500 13px/1 var(--font);
+                color: var(--ink);
+                background: transparent;
+                border: 0;
+                border-radius: 0;
+                cursor: pointer;
+            }
+            .gmt-seg button + button {
+                border-left: 1px solid var(--ink);
+            }
+            .gmt-seg button[aria-pressed="true"] {
+                color: var(--paper);
+                background: var(--ink);
+            }
+            #gmtouch-note {
+                position: absolute;
+                inset: 0;
+                display: none;
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                gap: 16px;
+                box-sizing: border-box;
+                padding: var(--g) calc(var(--g) + var(--touch-right)) var(--g) calc(var(--g) + var(--touch-left));
+                color: var(--ink);
+                background: rgba(0, 0, 0, 0.92);
+                pointer-events: auto;
+                font: 15px/1.45 var(--font);
+            }
+            #gmtouch-note p {
+                margin: 0;
+                max-width: 30em;
             }
 
             /* Custom Runner Styles */
@@ -216,18 +533,24 @@
         <!-- Custom BodyStart code is injected here -->
         
 
-        <!-- Start on a click, so the browser allows audio from the first sound. Enabled once the game code has loaded. -->
-        <button id="start" disabled onclick="document.getElementById('install').remove(); this.remove(); GameMaker_Init();">Loading</button>
+        <!-- Start on a click, a tap or a key, so the browser allows audio from the first sound. Enabled once the game has loaded. -->
+        <button id="start" disabled onclick="barkley.start()">
+            <span class="name">Barkley, Shut Up and Jam: Gaiden</span>
+            <span class="word">Start</span>
+            <span class="hint load">Loading</span>
+            <span class="hint key">Click or press any key</span>
+            <span class="hint touch">Tap anywhere</span>
+        </button>
 
         <!-- On the first visit from a phone or tablet in the browser, suggest installing the game as an app, which opens full screen. -->
-        <div id="install" hidden role="dialog" aria-labelledby="install-title">
-            <div class="panel">
-                <h2 id="install-title">Play full screen</h2>
-                <p>Barkley plays best installed as an app. It opens full screen, without the browser's address bar, straight from your home screen.</p>
-                <p id="install-how"></p>
-                <p class="note" id="install-note" hidden></p>
-                <button id="install-now" hidden>Install</button>
-                <button id="install-skip">Continue in browser</button>
+        <div id="install" class="ui-panel" hidden role="dialog" aria-labelledby="install-title">
+            <div class="ui-head"><h2 id="install-title">Play full screen</h2></div>
+            <p>Barkley plays best as an app: full screen, without the address bar, from your home screen.</p>
+            <ol class="ui-steps" id="install-how"></ol>
+            <p class="ui-mute" id="install-note" hidden></p>
+            <div class="ui-foot">
+                <button class="ui-btn primary" id="install-now" hidden>Install</button>
+                <button class="ui-btn" id="install-skip">Continue in browser</button>
             </div>
         </div>
         <script>
@@ -241,13 +564,14 @@
                 try { localStorage.setItem("barkley.install", "1"); } catch (e) {}
                 const $ = (id) => document.getElementById(id);
                 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+                const steps = ios
+                    ? ['Tap <b>Share</b> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg> in Safari\'s toolbar, or under <b>&middot;&middot;&middot;</b>.', "Tap <b>Add to Home Screen</b>."]
+                    : ["Open the browser menu, <b>&#8942;</b>.", "Tap <b>Install app</b> or <b>Add to Home screen</b>."];
+                $("install-how").innerHTML = steps.concat("Open Barkley from your home screen.").map((s) => "<li><span>" + s + "</span></li>").join("");
                 if (ios) {
-                    $("install-how").innerHTML = 'In Safari, tap <b>Share</b> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg> (in the toolbar, or under <b>&middot;&middot;&middot;</b>), then <b>Add to Home Screen</b>. Then open Barkley from your home screen.';
                     // Home-screen apps on iOS keep their own storage, apart from Safari's.
-                    $("install-note").textContent = "The app keeps its own saves, separate from Safari's. To bring saves along, use Configuration \u2192 SETTINGS \u2192 Saves in both.";
+                    $("install-note").textContent = "The app keeps its own saves, separate from Safari's. To bring saves along, use Configuration → SETTINGS → Saves in both.";
                     $("install-note").hidden = false;
-                } else {
-                    $("install-how").innerHTML = 'Open the browser menu (<b>&#8942;</b>) and tap <b>Install app</b> or <b>Add to Home screen</b>. Then open Barkley from your home screen.';
                 }
                 // Chrome can show its own install dialog, but only once it decides the page qualifies, so the button appears when it does.
                 addEventListener("beforeinstallprompt", (e) => {
@@ -286,13 +610,177 @@
         </script>
 
 
+        <!-- The game loads behind the Start screen: GameMaker_Init runs on page load, and the runtime is held just before
+             Game Start (the "Entering main loop..." it logs then) until Start, so Start begins the game at once. The
+             wrappers are plain functions, not arrows: the runtime's error trace walks arguments.callee.caller through
+             them. Under the fuzz harness (window.__fuzz, which wraps the game's functions before GameMaker_Init and runs
+             its own frames) none of this applies, and Start runs GameMaker_Init as it always did. -->
+        <script>
+            (function () {
+                var B = (window.barkley = { started: false, inited: false, hold: false, held: [], audio: [] });
+                var HOLD = {};
+                B.ready = function () {
+                    var start = document.getElementById("start");
+                    if (!start) return;
+                    start.querySelector(".word").style.setProperty("--p", "100%");
+                    start.disabled = false;
+                    start.focus();
+                };
+                B.start = function () {
+                    if (B.started) return;
+                    B.started = true;
+                    ["install", "start"].forEach(function (id) {
+                        var e = document.getElementById(id);
+                        if (e) e.remove();
+                    });
+                    // the runtime unlocks audio on a pointer press only, and a key can start too
+                    B.audio.forEach(function (c) {
+                        c.resume().catch(function () {});
+                    });
+                    if (!B.inited) (B.inited = true), GameMaker_Init();
+                    B.hold = false;
+                    B.held.splice(0).forEach(function (cb) {
+                        window.requestAnimationFrame(cb);
+                    });
+                };
+                if (window.__fuzz) return;
+                var raf = window.requestAnimationFrame.bind(window);
+                window.requestAnimationFrame = function (cb) {
+                    return raf(function (t) {
+                        if (B.hold) return void B.held.push(cb);
+                        try {
+                            cb(t);
+                        } catch (e) {
+                            if (e !== HOLD) throw e;
+                        }
+                    });
+                };
+                var log = console.log;
+                console.log = function (text) {
+                    if (text === "Entering main loop..." && !B.started && !B.hold) {
+                        B.hold = true;
+                        B.ready();
+                        throw HOLD;
+                    }
+                    return log.apply(console, arguments);
+                };
+                // The texture pages (most of the bytes) download through fetch, so the Start word can show their bytes as
+                // they arrive (an <img> reports nothing until it is done); the image then loads from the downloaded blob.
+                var src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+                B.textures = {}; // url -> [bytes loaded, bytes in all (0 if unknown), done]
+                Object.defineProperty(HTMLImageElement.prototype, "src", {
+                    configurable: true,
+                    enumerable: src.enumerable,
+                    get: function () {
+                        return src.get.call(this);
+                    },
+                    set: function (url) {
+                        var img = this;
+                        if (B.started || !/_texture_\d+\.png/.test(url) || !window.ReadableStream) return src.set.call(img, url);
+                        var t = (B.textures[url] = [0, 0, false]);
+                        fetch(url, { priority: "low" }) // after the scripts, as an image would be
+                            .then(function (r) {
+                                if (!r.ok || !r.body) throw r.status;
+                                t[1] = +r.headers.get("Content-Length") || 0;
+                                var reader = r.body.getReader(),
+                                    parts = [];
+                                return (function read() {
+                                    return reader.read().then(function (x) {
+                                        if (x.done) return new Blob(parts, { type: "image/png" });
+                                        parts.push(x.value);
+                                        t[0] += x.value.length;
+                                        return read();
+                                    });
+                                })();
+                            })
+                            .then(
+                                function (blob) {
+                                    var u = URL.createObjectURL(blob);
+                                    img.addEventListener("load", function () {
+                                        URL.revokeObjectURL(u);
+                                    });
+                                    t[2] = true;
+                                    src.set.call(img, u);
+                                },
+                                function () {
+                                    t[1] = 0;
+                                    src.set.call(img, url); // load it the ordinary way
+                                },
+                            );
+                    },
+                });
+                var AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    var Recorded = function (options) {
+                        var c = new AC(options);
+                        B.audio.push(c);
+                        return c;
+                    };
+                    Recorded.prototype = AC.prototype;
+                    window.AudioContext = Recorded;
+                }
+            })();
+            // option_html5_loadingbar: the runtime calls this every loading frame in place of drawing its bar, but only
+            // once the extension scripts have loaded, so barkley_show also runs on a timer until Start is ready. The Start
+            // word shows the progress, and it only ever moves forward. The runtime counts files, but ~180 small sounds
+            // (3.4 MB) load long before the 9 texture pages (37 MB), so the count reached 89% in the first seconds and
+            // then stood still. So the texture pages count by bytes (barkley.textures) and weigh 90%, the rest 10%.
+            var barkley_count = { total: 0, loaded: 0 },
+                barkley_shown = 0;
+            function barkley_loading(ctx, width, height, total, loaded) {
+                barkley_count = { total: total, loaded: loaded };
+                barkley_show();
+            }
+            function barkley_show() {
+                var e = document.querySelector("#start .word");
+                var t = Object.values((window.barkley && barkley.textures) || {});
+                var n = window.JSON_game && JSON_game.Textures ? JSON_game.Textures.length : 0;
+                var got = 0, all = 0, done = 0;
+                t.forEach(function (x) {
+                    got += x[0];
+                    all += x[1];
+                    done += x[2] ? 1 : 0;
+                });
+                // pages whose size isn't known yet (not started, or no Content-Length) count as the average known one
+                var sized = t.filter(function (x) { return x[1] > 0; }).length;
+                var tex = sized ? Math.min(1, got / (all + ((n - sized) * all) / sized)) : n ? done / n : 0;
+                var c = barkley_count,
+                    rest = c.total > n ? Math.max(0, c.loaded - done) / (c.total - n) : 0;
+                var f = n ? 0.9 * tex + 0.1 * rest : c.total ? c.loaded / c.total : 0;
+                var p = Math.floor(100 * Math.min(1, f));
+                if (!e || p <= barkley_shown) return;
+                barkley_shown = p;
+                e.style.setProperty("--p", p + "%");
+            }
+        </script>
+
         <!-- Run the game code -->
-        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1276391346"></script>
+        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1205516058"></script>
 
         <!-- Builtin injector for injecting runner path -->
         
 
-        <script>window.onload = () => Object.assign(document.getElementById("start"), { disabled: false, textContent: "Start" });</script>
+        <script>
+            window.onload = () => {
+                const start = document.getElementById("start");
+                // Before Start, keys stay away from the game (the one that starts it would read as pressed in its first
+                // step). Any character key, Enter or an arrow starts, unless the install prompt is up.
+                const key = (e) => {
+                    if (barkley.started) return removeEventListener("keydown", key, true);
+                    const install = document.getElementById("install");
+                    if (e.ctrlKey || e.metaKey || e.altKey || (install && !install.hidden)) return;
+                    e.stopImmediatePropagation();
+                    if (start.disabled || !(e.key.length === 1 || e.key === "Enter" || e.key.startsWith("Arrow"))) return;
+                    e.preventDefault();
+                    barkley.start();
+                };
+                addEventListener("keydown", key, true);
+                if (window.__fuzz) return barkley.ready();
+                barkley.inited = true;
+                GameMaker_Init();
+                const timer = setInterval(() => (start.disabled ? barkley_show() : clearInterval(timer)), 100);
+            };
+        </script>
 
         <!-- Builtin injector for injecting google analytics code -->
         
