@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <!-- Custom PreHead code is injected here -->
+    
+
+    <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name ="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />
+        <!-- No apple-mobile-web-app-status-bar-style: black-translucent put the page under the status bar, and since iOS 26
+             the home-screen app blurs that band and a little below it (the top of the picture in portrait). The default
+             opaque status bar keeps the page below it; theme-color makes it black. -->
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#000000" />
+        <!-- Installable as an app that opens full screen; import.mjs adds these files to html5game/ as Included Files. -->
+        <link rel="manifest" href="html5game/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="html5game/icon-180.png" />
+        <!-- The page's font, Inter (SIL OFL 1.1; licence in inter-OFL.txt beside it), added by import.mjs like the icons -->
+        <link rel="preload" href="html5game/inter.woff2" as="font" type="font/woff2" crossorigin />
+        <meta charset="utf-8"/>
+
+        <!-- Builtin injector for disabling cache -->
+        <meta http-equiv="pragma" content="no-cache"/>
+
+        <!-- Set the title bar of the page -->
+        <title>Barkley, Shut Up and Jam: Gaiden</title>
+
+        <!-- Custom PreStyle code is injected here -->
+        
+
+        <!-- The page around the game. One quiet system: black, white, Helvetica, flush left, hairline rules; an active
+             control inverts to white. The Saves, crash and touch extensions build plain DOM and are styled here. -->
+        <style>
+            @font-face {
+                font-family: "Inter";
+                src: url("html5game/inter.woff2") format("woff2");
+                font-weight: 100 900;
+                font-style: normal;
+                font-display: swap;
+            }
+            /* The Start word's loading fill; registered so it can animate between progress reports */
+            @property --p {
+                syntax: "<percentage>";
+                inherits: false;
+                initial-value: 0%;
+            }
+            :root {
+                --ink: #ffffff;
+                --paper: #000000;
+                --mute: #8f8f8f; /* solid, so overlapping glyphs in the tight Start word do not double up */
+                --rule: rgba(255, 255, 255, 0.24);
+                --font: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
+                --mono: ui-monospace, Menlo, Consolas, monospace;
+                --g: 16px;
+                /* Safe-area insets (the Dynamic Island or notch, rounded corners, the home indicator). Everything the page
+                   draws stays inside them: the touch overlay's layout, the panels' and sheets' padding, the Start screen. */
+                --touch-top: env(safe-area-inset-top, 0px);
+                --touch-bottom: env(safe-area-inset-bottom, 0px);
+                --touch-left: env(safe-area-inset-left, 0px);
+                --touch-right: env(safe-area-inset-right, 0px);
+                color-scheme: dark;
+            }
+            @media (min-width: 720px) {
+                :root {
+                    --g: 32px;
+                }
+            }
+            body {
+                /* Igor writes the game's black as "#0", which is not CSS, so the page showed white before Start. */
+                background: var(--paper);
+                color: var(--ink);
+                font: 15px/1.45 var(--font);
+                margin: 0px;
+                padding: 0px;
+                border: 0px;
+                /* For the touch overlay: no pull-to-refresh, selection loupe or long-press callout. */
+                overscroll-behavior: none;
+                -webkit-user-select: none;
+                user-select: none;
+                -webkit-touch-callout: none;
+                -webkit-font-smoothing: antialiased;
+            }
+
+            canvas {
+                image-rendering: optimizeSpeed;
+                -webkit-interpolation-mode: nearest-neighbor;
+                -ms-touch-action: none;
+                touch-action: none;
+                margin: 0px;
+                padding: 0px;
+                border: 0px;
+            }
+            :-webkit-full-screen #canvas {
+                width: 100%;
+                height: 100%;
+            }
+            :-webkit-full-screen {
+                width: 100%;
+                height: 100%;
+            }
+
+            /* Buttons: square, hairline, 44 px tall; .primary is filled; .ui-link is bare text. */
+            .ui-btn {
+                appearance: none;
+                box-sizing: border-box;
+                min-height: 44px;
+                padding: 0 20px;
+                font: 500 15px/1 var(--font);
+                color: var(--ink);
+                background: transparent;
+                border: 1px solid var(--ink);
+                border-radius: 0;
+                cursor: pointer;
+                touch-action: manipulation;
+            }
+            .ui-btn:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.14);
+            }
+            .ui-btn.primary {
+                color: var(--paper);
+                background: var(--ink);
+            }
+            .ui-btn.primary:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.84);
+            }
+            .ui-btn:disabled {
+                opacity: 0.35;
+                cursor: default;
+            }
+            .ui-link {
+                appearance: none;
+                min-height: 44px;
+                padding: 0;
+                font: 500 15px/1 var(--font);
+                color: var(--ink);
+                background: none;
+                border: 0;
+                cursor: pointer;
+                touch-action: manipulation;
+            }
+            .ui-link:hover {
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+            .ui-btn:focus-visible,
+            .ui-link:focus-visible,
+            .ui-code:focus-visible {
+                outline: 2px solid var(--ink);
+                outline-offset: 2px;
+            }
+
+            /* The Start screen: the whole page is the button, so a click or tap anywhere starts. The words sit on the
+               left edge of the picture to come (4:3, centred), in the middle of the height. */
+            #start {
+                position: fixed;
+                inset: 0;
+                z-index: 10;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                margin: 0;
+                --edge: calc((100vw - 100vh * 4 / 3) / 2 + var(--g));
+                padding: var(--touch-top) max(var(--edge), calc(var(--g) + var(--touch-right))) var(--touch-bottom)
+                    max(var(--edge), calc(var(--g) + var(--touch-left)));
+                color: var(--ink);
+                background: var(--paper);
+                border: 0;
+                font: 15px/1.3 var(--font);
+                text-align: left;
+                cursor: pointer;
+                touch-action: manipulation;
+            }
+            #start:focus {
+                outline: none;
+            }
+            #start:disabled {
+                cursor: default;
+            }
+            #start .name {
+                color: var(--mute);
+            }
+            /* While the game loads, the word fills from grey to white, left to right */
+            #start .word {
+                margin: 8px 0 16px -0.04em;
+                font-size: clamp(56px, 14vmin, 128px);
+                font-weight: 700;
+                line-height: 0.9;
+                letter-spacing: -0.02em;
+                color: transparent;
+                background: linear-gradient(to right, var(--ink) var(--p), var(--mute) var(--p));
+                -webkit-background-clip: text;
+                background-clip: text;
+                transition: --p 0.6s linear;
+            }
+            #start .hint {
+                color: var(--mute);
+            }
+            /* The version, and how far the offline copy has got (sw.js) */
+            #start #offline {
+                margin-top: 14px;
+                font-size: 13px;
+            }
+            #start #offline[hidden] {
+                display: none;
+            }
+            #start:disabled .key,
+            #start:disabled .touch,
+            #start:not(:disabled) .load {
+                display: none;
+            }
+            @media (pointer: coarse) {
+                #start .key {
+                    display: none;
+                }
+            }
+            @media not (pointer: coarse) {
+                #start .touch {
+                    display: none;
+                }
+            }
+            /* Under the Start screen when a resume state is waiting (resume.js): a way to begin at the title screen
+               instead. Flush with the words above it, at the foot of the page. */
+            #ctlbar {
+                position: fixed;
+                z-index: 11;
+                left: max(calc(var(--g) + var(--touch-left)), calc((100vw - 100vh * 4 / 3) / 2 + var(--g)));
+                right: calc(var(--g) + var(--touch-right));
+                bottom: calc(var(--g) / 2 + var(--touch-bottom));
+                font: 15px/1.3 var(--font);
+            }
+            /* the resume line takes the bottom when it is up, so this sits on top of it */
+            #fresh:not([hidden]) ~ #ctlbar {
+                bottom: calc(var(--g) / 2 + var(--touch-bottom) + 28px);
+            }
+            #fresh {
+                position: fixed;
+                z-index: 11;
+                left: max(calc(var(--g) + var(--touch-left)), calc((100vw - 100vh * 4 / 3) / 2 + var(--g)));
+                right: calc(var(--g) + var(--touch-right));
+                bottom: calc(var(--g) / 2 + var(--touch-bottom));
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                column-gap: 12px;
+                color: var(--mute);
+                font: 15px/1.3 var(--font);
+            }
+            #fresh[hidden] {
+                display: none;
+            }
+            #fresh .ui-link {
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+            #fresh .ui-link:disabled {
+                opacity: 0.35;
+                cursor: default;
+            }
+            /* The runtime's own loading bar: the game loads behind the Start screen instead. */
+            #loading_screen {
+                display: none;
+            }
+
+            /* Panels over the game (install, Saves, crash report): a black sheet, a title and its hairline, flush-left
+               text in one column. Above the touch overlay, whose hit layer would otherwise take their taps. */
+            .ui-panel {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483600;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                gap: 24px;
+                padding: calc(var(--g) / 2 + var(--touch-top)) calc(var(--g) + var(--touch-right))
+                    calc(var(--g) + var(--touch-bottom)) calc(var(--g) + var(--touch-left));
+                overflow-y: auto;
+                color: var(--ink);
+                background: var(--paper);
+                font: 15px/1.45 var(--font);
+                -webkit-user-select: text;
+                user-select: text;
+            }
+            .ui-panel:focus {
+                outline: none;
+            }
+            .ui-panel[hidden] {
+                display: none;
+            }
+            .ui-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+                min-height: 44px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid var(--ink);
+            }
+            .ui-panel h2 {
+                margin: 0;
+                font: 700 22px/1.1 var(--font);
+                letter-spacing: -0.01em;
+            }
+            .ui-panel h3 {
+                margin: 0;
+                padding-top: 8px;
+                border-top: 1px solid var(--rule);
+                font: 700 12px/1.3 var(--font);
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .ui-panel p {
+                margin: 0;
+                max-width: 36em;
+            }
+            .ui-panel .ui-mute {
+                color: var(--mute);
+            }
+            .ui-panel .ui-status {
+                min-height: 1.45em;
+                font-weight: 700;
+            }
+            .ui-cols {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                gap: 32px;
+                flex: 1 0 auto;
+            }
+            @media (min-width: 720px) {
+                .ui-cols {
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                }
+            }
+            .ui-col {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                min-width: 0;
+            }
+            .ui-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .ui-code {
+                flex: 1 0 8em;
+                box-sizing: border-box;
+                width: 100%;
+                min-height: 8em;
+                padding: 8px;
+                font: 12px/1.4 var(--mono);
+                color: var(--ink);
+                background: transparent;
+                border: 1px solid var(--rule);
+                border-radius: 0;
+                resize: vertical;
+                word-break: break-all;
+            }
+            .ui-code::placeholder {
+                color: var(--mute);
+            }
+
+            /* Controls panel (controls.js): the binding lists, and the test that lights a control as it is pressed. */
+            .ctl-list {
+                display: grid;
+                grid-template-columns: max-content minmax(0, 1fr);
+                gap: 6px 16px;
+                margin: 0;
+            }
+            .ctl-list dt {
+                font-weight: 700;
+            }
+            .ctl-list dd {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: baseline;
+                gap: 6px;
+                margin: 0;
+            }
+            .ctl-key {
+                padding: 1px 7px;
+                font: 12px/1.6 var(--mono);
+                border: 1px solid var(--ink);
+            }
+            .ctl-or,
+            .ctl-note {
+                font-size: 13px;
+                color: var(--mute);
+            }
+            .ctl-lamps {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .ctl-lamp {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                min-width: 76px;
+                padding: 8px 10px;
+                border: 1px solid var(--rule);
+            }
+            .ctl-lamp.on {
+                color: var(--paper);
+                background: var(--ink);
+                border-color: var(--ink);
+            }
+            .ctl-lamp-name {
+                font-size: 13px;
+                font-weight: 700;
+            }
+            .ctl-lamp-key {
+                font: 12px/1.4 var(--mono);
+                color: var(--mute);
+            }
+            .ctl-lamp.on .ctl-lamp-key {
+                color: var(--paper);
+            }
+            .ctl-raw {
+                font: 12px/1.5 var(--mono);
+                color: var(--mute);
+            }
+            .ui-foot {
+                display: grid;
+                gap: 8px;
+            }
+
+            /* The first-visit prompt on a phone or tablet to install the game as an app. */
+            #install .ui-steps {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+                counter-reset: step;
+            }
+            #install .ui-steps li {
+                display: grid;
+                grid-template-columns: 2em 1fr;
+                padding: 12px 0;
+                border-top: 1px solid var(--rule);
+                counter-increment: step;
+            }
+            #install .ui-steps li::before {
+                content: counter(step);
+                font-weight: 700;
+            }
+            #install svg {
+                width: 1.1em;
+                height: 1.1em;
+                vertical-align: -0.15em;
+            }
+            #install .ui-foot {
+                margin-top: auto;
+            }
+            #install-now[hidden] {
+                display: none;
+            }
+            @media (max-height: 500px) {
+                #install {
+                    gap: 16px;
+                    font-size: 14px;
+                }
+                #install .ui-steps li {
+                    padding: 8px 0;
+                }
+                #install .ui-foot {
+                    grid-auto-flow: column;
+                    grid-auto-columns: 1fr;
+                }
+            }
+
+            /* The touch overlay (touch.js): hairline shapes at low opacity; a pressed control fills white. */
+            #gmtouch {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483000;
+                display: none;
+                pointer-events: none;
+                font-family: var(--font);
+                -webkit-user-select: none;
+                user-select: none;
+            }
+            #gmtouch-hit {
+                position: absolute;
+                inset: 0;
+                pointer-events: auto;
+                touch-action: none;
+            }
+            #gmtouch svg {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                overflow: visible;
+                pointer-events: none;
+            }
+            .gmt-fade { transition: opacity 0.45s ease; }
+            .gmt-btn { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.36); stroke-width: 1; }
+            .gmt-btn.on { fill: rgba(255, 255, 255, 0.9); stroke: #ffffff; }
+            .gmt-label {
+                fill: rgba(255, 255, 255, 0.72);
+                font-family: var(--font);
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-anchor: middle;
+                dominant-baseline: central;
+            }
+            .gmt-label.on { fill: #000000; }
+            .gmt-ring { fill: rgba(255, 255, 255, 0.03); stroke: rgba(255, 255, 255, 0.22); stroke-width: 1; }
+            .gmt-knob { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.36); stroke-width: 1; }
+            .gmt-knob.on { fill: rgba(255, 255, 255, 0.34); stroke: rgba(255, 255, 255, 0.7); }
+            .gmt-ghost { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; stroke-dasharray: 2 6; }
+            .gmt-dpad { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
+            .gmt-arm { fill: rgba(255, 255, 255, 0.42); }
+            .gmt-tick { fill: rgba(255, 255, 255, 0.3); }
+            .gmt-gear { fill: rgba(255, 255, 255, 0.04); stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
+            .gmt-icon { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 1.25; }
+            /* Its settings sheet and the SET KEYS note */
+            #gmtouch-sheet {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                display: none;
+                flex-direction: column;
+                box-sizing: border-box;
+                padding: 4px calc(var(--g) + var(--touch-right)) calc(12px + var(--touch-bottom))
+                    calc(var(--g) + var(--touch-left));
+                color: var(--ink);
+                background: var(--paper);
+                border-top: 1px solid var(--ink);
+                pointer-events: auto;
+                font: 15px/1.3 var(--font);
+                max-height: calc(100% - var(--touch-top));
+                overflow-y: auto;
+            }
+            .gmt-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            #gmtouch-sheet h3 {
+                margin: 0;
+                font: 700 12px/1.3 var(--font);
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .gmt-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+                padding: 10px 0;
+                border-top: 1px solid var(--rule);
+            }
+            .gmt-hint {
+                margin-top: 2px;
+                font-size: 12px;
+                color: var(--mute);
+            }
+            .gmt-seg {
+                display: flex;
+                flex: 0 0 auto;
+                border: 1px solid var(--ink);
+            }
+            .gmt-seg button {
+                appearance: none;
+                min-width: 44px;
+                min-height: 36px;
+                padding: 0 12px;
+                font: 500 13px/1 var(--font);
+                color: var(--ink);
+                background: transparent;
+                border: 0;
+                border-radius: 0;
+                cursor: pointer;
+            }
+            .gmt-seg button + button {
+                border-left: 1px solid var(--ink);
+            }
+            .gmt-seg button[aria-pressed="true"] {
+                color: var(--paper);
+                background: var(--ink);
+            }
+            #gmtouch-note {
+                position: absolute;
+                inset: 0;
+                display: none;
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                gap: 16px;
+                box-sizing: border-box;
+                padding: calc(var(--g) + var(--touch-top)) calc(var(--g) + var(--touch-right))
+                    calc(var(--g) + var(--touch-bottom)) calc(var(--g) + var(--touch-left));
+                color: var(--ink);
+                background: rgba(0, 0, 0, 0.92);
+                pointer-events: auto;
+                font: 15px/1.45 var(--font);
+            }
+            #gmtouch-note p {
+                margin: 0;
+                max-width: 30em;
+            }
+
+            /* Custom Runner Styles */
+            div.gm4html5_div_class {
+                margin: 0px;
+                padding: 0px;
+                border: 0px;
+            }
+            div.gm4html5_login {
+                padding: 20px;
+                position: absolute;
+                border: solid 2px #000000;
+                background-color: #404040;
+                color:#00ff00;
+                border-radius: 15px;
+                box-shadow: #101010 20px 20px 40px;
+            }
+            div.gm4html5_cancel_button {
+                float: right;
+            }
+            div.gm4html5_login_button {
+                float: left;
+            }
+            div.gm4html5_login_header {
+                text-align: center;
+            }
+            /* END - Custom Runner Styles */
+            
+        </style>
+
+        <!-- Custom PostStyle code is injected here -->
+        
+
+        <!-- Builtin injector for injecting flurry analytics code -->
+        
+    </head>
+
+    <!-- Custom PostHead code is injected here -->
+    
+
+    <!-- Custom PreBody code is injected here -->
+    
+
+    <body>
+        <!-- Custom BodyStart code is injected here -->
+        
+
+        <!-- Start on a click, a tap or a key, so the browser allows audio from the first sound. Enabled once the game has loaded. -->
+        <button id="start" disabled onclick="barkley.start()">
+            <span class="name">Barkley, Shut Up and Jam: Gaiden</span>
+            <span class="word">Start</span>
+            <span class="hint load">Loading</span>
+            <span class="hint key">Click or press any key</span>
+            <span class="hint touch">Tap anywhere</span>
+            <span class="hint" id="offline" hidden></span>
+        </button>
+        <!-- What the game listens to, and a test for it, before the game runs: controls.js, enabled with Start. -->
+        <div id="ctlbar" hidden>
+            <button class="ui-link" id="controls-go" disabled onclick="barkley.controls(event)">Controls</button>
+        </div>
+        <!-- Start resumes where the last session left off, if resume.js kept its state; this starts at the title screen instead. -->
+        <div id="fresh" hidden>
+            <span>Continues where you left off.</span>
+            <button class="ui-link" id="fresh-go" disabled onclick="barkley.start(true)">Start from the title screen</button>
+        </div>
+        <script>
+            (() => {
+                let state = "";
+                try { state = localStorage.getItem("barkley.resume") || ""; } catch (e) {}
+                if (state && !window.__fuzz) document.getElementById("fresh").hidden = false;
+            })();
+        </script>
+
+        <!-- On the first visit from a phone or tablet in the browser, suggest installing the game as an app, which opens full screen. -->
+        <div id="install" class="ui-panel" hidden role="dialog" aria-labelledby="install-title">
+            <div class="ui-head"><h2 id="install-title">Play full screen</h2></div>
+            <p>Barkley plays best as an app: full screen, without the address bar, from your home screen.</p>
+            <ol class="ui-steps" id="install-how"></ol>
+            <p class="ui-mute" id="install-note" hidden></p>
+            <div class="ui-foot">
+                <button class="ui-btn primary" id="install-now" hidden>Install</button>
+                <button class="ui-btn" id="install-skip">Continue in browser</button>
+            </div>
+        </div>
+        <script>
+            (() => {
+                const box = document.getElementById("install");
+                const app = matchMedia("(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)").matches || navigator.standalone;
+                const touch = navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;
+                let seen = false;
+                try { seen = localStorage.getItem("barkley.install") !== null; } catch (e) {}
+                if (app || !touch || seen) return;
+                try { localStorage.setItem("barkley.install", "1"); } catch (e) {}
+                const $ = (id) => document.getElementById(id);
+                const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+                const steps = ios
+                    ? ['Tap <b>Share</b> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg> in Safari\'s toolbar, or under <b>&middot;&middot;&middot;</b>.', "Tap <b>Add to Home Screen</b>."]
+                    : ["Open the browser menu, <b>&#8942;</b>.", "Tap <b>Install app</b> or <b>Add to Home screen</b>."];
+                $("install-how").innerHTML = steps.concat("Open Barkley from your home screen.").map((s) => "<li><span>" + s + "</span></li>").join("");
+                if (ios) {
+                    // Home-screen apps on iOS keep their own storage, apart from Safari's.
+                    $("install-note").textContent = "The app keeps its own saves, separate from Safari's. To bring saves along, use Configuration → SETTINGS → Saves in both.";
+                    $("install-note").hidden = false;
+                }
+                // Chrome can show its own install dialog, but only once it decides the page qualifies, so the button appears when it does.
+                addEventListener("beforeinstallprompt", (e) => {
+                    if (!box.isConnected || box.hidden) return;
+                    e.preventDefault();
+                    $("install-now").hidden = false;
+                    $("install-now").onclick = () => e.prompt().then(() => e.userChoice).then((r) => r.outcome === "accepted" && (box.hidden = true));
+                });
+                $("install-skip").onclick = () => (box.hidden = true);
+                box.hidden = false;
+            })();
+        </script>
+
+        <div class="gm4html5_div_class" id="gm4html5_div_id">
+            
+            <!-- Builtin injector for splash screen -->
+            
+
+            <!-- Custom PreCanvas code is injected here -->
+            
+
+            <!-- Create the canvas element the game draws to -->
+            <canvas id="canvas" width="320" height="240" >
+                
+                <p>Your browser doesn't support HTML5 canvas.</p>
+            </canvas>
+            
+            <!-- Custom PostCanvas code is injected here -->
+            
+        </div>
+        <!-- Safari decodes Ogg Vorbis with the first ~26 ms of each sound missing; report no Ogg support so the runtime loads the MP3s. -->
+        <script>
+            HTMLMediaElement.prototype.canPlayType = ((canPlayType) => function (type) {
+                return /ogg/i.test(type) ? "" : canPlayType.call(this, type);
+            })(HTMLMediaElement.prototype.canPlayType);
+        </script>
+
+
+        <!-- The game loads behind the Start screen: GameMaker_Init runs on page load, and the runtime is held just before
+             Game Start (the "Entering main loop..." it logs then) until Start, so Start begins the game at once. The
+             wrappers are plain functions, not arrows: the runtime's error trace walks arguments.callee.caller through
+             them. Under the fuzz harness (window.__fuzz, which wraps the game's functions before GameMaker_Init and runs
+             its own frames) none of this applies, and Start runs GameMaker_Init as it always did. -->
+        <script>
+            (function () {
+                var B = (window.barkley = { started: false, inited: false, hold: false, held: [], audio: [] });
+                var HOLD = {};
+                B.ready = function () {
+                    var start = document.getElementById("start");
+                    if (!start) return;
+                    start.querySelector(".word").style.setProperty("--p", "100%");
+                    start.disabled = false;
+                    start.focus();
+                    var fresh = document.getElementById("fresh-go");
+                    if (fresh) fresh.disabled = false;
+                    var ctl = document.getElementById("controls-go");
+                    if (ctl && typeof controls_show === "function") {
+                        ctl.disabled = false;
+                        document.getElementById("ctlbar").hidden = false;
+                    }
+                    if (!window.__fuzz) barkley_early_music();
+                    barkley_version();
+                    barkley_offline();
+                };
+                // The Controls panel (controls.js) is a page of its own above the Start screen; a click on the link
+                // must not reach the Start button behind it, and the panel keeps every key pressed in it.
+                B.controls = function (e) {
+                    if (e) e.stopPropagation();
+                    if (typeof controls_show === "function") controls_show();
+                };
+                // fresh: forget the resume state before Game Start reads it (resume_take), so the game starts at the title
+                B.start = function (fresh) {
+                    if (B.started) return;
+                    B.started = true;
+                    if (fresh === true)
+                        try {
+                            localStorage.removeItem("barkley.resume");
+                        } catch (e) {}
+                    ["install", "start", "fresh", "ctlbar", "controls-panel"].forEach(function (id) {
+                        var e = document.getElementById(id);
+                        if (e) e.remove();
+                    });
+                    // the runtime unlocks audio on a pointer press only, and a key can start too
+                    B.audio.forEach(function (c) {
+                        c.resume().catch(function () {});
+                    });
+                    if (!B.inited) (B.inited = true), GameMaker_Init();
+                    setTimeout(function () {
+                        barkley_early = null; // never asked for (a game that resumed and plays nothing streamed)
+                    }, 60000);
+                    B.hold = false;
+                    B.held.splice(0).forEach(function (cb) {
+                        window.requestAnimationFrame(cb);
+                    });
+                };
+                if (window.__fuzz) return;
+                var raf = window.requestAnimationFrame.bind(window);
+                window.requestAnimationFrame = function (cb) {
+                    return raf(function (t) {
+                        if (B.hold) return void B.held.push(cb);
+                        try {
+                            cb(t);
+                        } catch (e) {
+                            if (e !== HOLD) throw e;
+                        }
+                    });
+                };
+                var log = console.log;
+                console.log = function (text) {
+                    if (text === "Entering main loop..." && !B.started && !B.hold) {
+                        B.hold = true;
+                        B.ready();
+                        throw HOLD;
+                    }
+                    return log.apply(console, arguments);
+                };
+                // The texture pages (most of the bytes) download through fetch, so the Start word can show their bytes as
+                // they arrive (an <img> reports nothing until it is done); the image then loads from the downloaded blob.
+                var src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+                B.textures = {}; // url -> [bytes loaded, bytes in all (0 if unknown), done]
+                Object.defineProperty(HTMLImageElement.prototype, "src", {
+                    configurable: true,
+                    enumerable: src.enumerable,
+                    get: function () {
+                        return src.get.call(this);
+                    },
+                    set: function (url) {
+                        var img = this;
+                        if (B.started || !/_texture_\d+\.png/.test(url) || !window.ReadableStream) return src.set.call(img, url);
+                        var t = (B.textures[url] = [0, 0, false]);
+                        fetch(url, { priority: "low" }) // after the scripts, as an image would be
+                            .then(function (r) {
+                                if (!r.ok || !r.body) throw r.status;
+                                t[1] = +r.headers.get("Content-Length") || 0;
+                                var reader = r.body.getReader(),
+                                    parts = [];
+                                return (function read() {
+                                    return reader.read().then(function (x) {
+                                        if (x.done) return new Blob(parts, { type: "image/png" });
+                                        parts.push(x.value);
+                                        t[0] += x.value.length;
+                                        return read();
+                                    });
+                                })();
+                            })
+                            .then(
+                                function (blob) {
+                                    var u = URL.createObjectURL(blob);
+                                    img.addEventListener("load", function () {
+                                        URL.revokeObjectURL(u);
+                                    });
+                                    t[2] = true;
+                                    src.set.call(img, u);
+                                },
+                                function () {
+                                    t[1] = 0;
+                                    src.set.call(img, url); // load it the ordinary way
+                                },
+                            );
+                    },
+                });
+                // The runtime's decode of the intro's music gets the buffer barkley_early_music made while Start waited.
+                // After Start, the first decode that isn't that file means the game went elsewhere: drop it.
+                if (window.BaseAudioContext) {
+                    var decode = BaseAudioContext.prototype.decodeAudioData;
+                    B.decode = decode;
+                    BaseAudioContext.prototype.decodeAudioData = function (data, ok, fail) {
+                        var e = barkley_early,
+                            ctx = this,
+                            p;
+                        var tag = barkley_decoding; // the sound whose download this is (barkley_audio_fix)
+                        barkley_decoding = null;
+                        if (e && data && data.byteLength === e.size) {
+                            barkley_early = null;
+                            p = e.buffer.catch(function () {
+                                return decode.call(ctx, data);
+                            });
+                            if (ok) p.then(ok, fail);
+                        } else {
+                            if (B.started && e !== null) barkley_early = null;
+                            p = decode.apply(this, arguments);
+                        }
+                        if (!tag) return p;
+                        // stopped or reused meanwhile: never hand the buffer back, so the runtime never starts it
+                        return p.then(function (buffer) {
+                            return tag.voice.barkleyGen === tag.gen ? buffer : new Promise(function () {});
+                        });
+                    };
+                }
+                var AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    var Recorded = function (options) {
+                        var c = new AC(options);
+                        B.audio.push(c);
+                        return c;
+                    };
+                    Recorded.prototype = AC.prototype;
+                    window.AudioContext = Recorded;
+                }
+            })();
+            // option_html5_loadingbar: the runtime calls this every loading frame in place of drawing its bar, but only
+            // once the extension scripts have loaded, so barkley_show also runs on a timer until Start is ready. The Start
+            // word shows the progress, and it only ever moves forward. The runtime counts files, but ~180 small sounds
+            // (3.4 MB) load long before the 9 texture pages (37 MB), so the count reached 89% in the first seconds and
+            // then stood still. So the texture pages count by bytes (barkley.textures) and weigh 90%, the rest 10%.
+            var barkley_count = { total: 0, loaded: 0 },
+                barkley_shown = 0;
+            // The music is streamed: the runtime downloads and decodes a track only when it first plays, so the intro
+            // (mSpace, 6 MB) was silent for several seconds after Start. Once the game has loaded, the page decodes it
+            // while the Start screen waits; barkley_early is then { size, buffer }, and null once used or given up.
+            var barkley_early;
+            function barkley_early_music() {
+                var ctx = barkley.audio[0];
+                if (!ctx || !barkley.decode) return;
+                fetch("html5game/mSpace.mp3")
+                    .then(function (r) {
+                        if (!r.ok) throw r.status;
+                        return r.arrayBuffer();
+                    })
+                    .then(function (data) {
+                        if (barkley_early !== undefined) return; // already given up
+                        barkley_early = { size: data.byteLength, buffer: barkley.decode.call(ctx, data) };
+                        barkley_early.buffer.catch(function () {});
+                    })
+                    .catch(function () {});
+            }
+            // Offline play: sw.js keeps a whole build in the browser's storage and downloads a newer one in full before
+            // it takes over from the one in use. It is registered once the game has loaded, so it never shares the
+            // first visit's bandwidth, and it asks for a check then, whenever the tab comes back, and when the machine
+            // comes back online. Never under the fuzz harness or with ?nosw in the URL: the tooling's own servers
+            // would be handing out a hundred megabytes a run, and the fuzzer needs each build served fresh.
+            var barkley_offline_at = 0, // the last check, so coming back to the tab doesn't ask over and over
+                barkley_offline_heard = false; // the worker has spoken, and knows more than version.json does
+            function barkley_offline() {
+                if (window.__fuzz || /(^|[?&])nosw\b/.test(location.search) || !navigator.serviceWorker) return;
+                navigator.serviceWorker.addEventListener("message", function (e) {
+                    if (!e.data || e.data.type !== "offline") return;
+                    barkley_offline_heard = true;
+                    barkley_offline_say(e.data);
+                });
+                navigator.serviceWorker.register("sw.js").then(function () {
+                    navigator.serviceWorker.ready.then(function (reg) {
+                        var check = function () {
+                            var w = reg.active || navigator.serviceWorker.controller;
+                            if (!w || document.visibilityState !== "visible" || Date.now() - barkley_offline_at < 60000) return;
+                            barkley_offline_at = Date.now();
+                            w.postMessage({ type: "check" });
+                        };
+                        addEventListener("online", check);
+                        addEventListener("visibilitychange", check);
+                        check();
+                    });
+                }, function () {});
+            }
+            // The version, under the Start word, in the same grey as the hint above it: which build of the port this
+            // is, without anyone having to look for it. Every build carries version.json, so this works whether or not
+            // the worker is in — a browser with no service workers, or a page opened with ?nosw, still shows it. The
+            // worker knows more (it can say the copy is saved for offline play, and it knows the version offline,
+            // where this fetch can't reach), so whatever it has said stands.
+            function barkley_version() {
+                if (window.__fuzz) return;
+                fetch("version.json", { cache: "no-store" })
+                    .then(function (r) { return r.json(); })
+                    .then(function (v) { if (!barkley_offline_heard) barkley_offline_say({ version: v.version }); })
+                    .catch(function () {});
+            }
+            function barkley_offline_say(s) {
+                var e = document.getElementById("offline");
+                if (!e) return; // the Start screen is gone: the download carries on without anywhere to show it
+                var text = s.version ? "v" + s.version : "";
+                if (s.downloading) {
+                    var d = s.downloading;
+                    text =
+                        "v" + d.version +
+                        (d.core ? " · Saving for offline play " : " · Saving the music ") +
+                        Math.floor((100 * d.done) / Math.max(1, d.total)) + "%";
+                } else if (s.complete) text += " · Ready to play offline";
+                e.textContent = text;
+                e.hidden = !text;
+            }
+            // The runtime plays a streamed sound (all the music) by downloading and decoding it, and then starts the
+            // sound object that asked, even if the game stopped it meanwhile; by then the runtime may have reused that
+            // object for the next sound. So music switched away from in its first seconds (the intro's, when it is
+            // skipped at once) played on, under the next track or in its place, beyond the game's reach. Each play and
+            // stop now counts a generation on the sound object; the download a play starts carries that generation, and
+            // a decode whose sound has moved on is never handed back. The runtime's names change from build to build,
+            // so its sound class is found by its methods.
+            var barkley_playing = null, // { voice, gen } while a play runs
+                barkley_decoding = null; // the same, from a finished download until its decode begins
+            function barkley_audio_fix() {
+                var Voice = Object.getOwnPropertyNames(window)
+                    .filter(function (n) {
+                        return n.charAt(0) === "_";
+                    })
+                    .map(function (n) {
+                        try {
+                            return window[n];
+                        } catch (e) {}
+                    })
+                    .find(function (f) {
+                        var p = typeof f === "function" && f.prototype;
+                        return (
+                            p &&
+                            ["play", "stop", "start", "pause"].every(function (m) {
+                                return Object.prototype.hasOwnProperty.call(p, m) && typeof p[m] === "function";
+                            }) &&
+                            /AudioBufferSourceNode/.test(p.start)
+                        );
+                    });
+                if (!Voice) return console.warn("barkley: the runtime's sound class wasn't found");
+                var P = Voice.prototype,
+                    play = P.play,
+                    stop = P.stop,
+                    open = XMLHttpRequest.prototype.open;
+                P.play = function () {
+                    this.barkleyGen = (this.barkleyGen || 0) + 1;
+                    barkley_playing = { voice: this, gen: this.barkleyGen };
+                    try {
+                        return play.apply(this, arguments);
+                    } finally {
+                        barkley_playing = null;
+                    }
+                };
+                P.stop = function () {
+                    this.barkleyGen = (this.barkleyGen || 0) + 1;
+                    return stop.apply(this, arguments);
+                };
+                // The runtime sets the download's onload after open, so this listener runs just before it, and its
+                // decodeAudioData call picks the tag up; a timeout clears it if the download failed instead.
+                XMLHttpRequest.prototype.open = function () {
+                    var tag = barkley_playing;
+                    if (tag)
+                        this.addEventListener("load", function () {
+                            barkley_decoding = tag;
+                            setTimeout(function () {
+                                if (barkley_decoding === tag) barkley_decoding = null;
+                            });
+                        });
+                    return open.apply(this, arguments);
+                };
+            }
+            function barkley_loading(ctx, width, height, total, loaded) {
+                barkley_count = { total: total, loaded: loaded };
+                barkley_show();
+            }
+            function barkley_show() {
+                var e = document.querySelector("#start .word");
+                var t = Object.values((window.barkley && barkley.textures) || {});
+                var n = window.JSON_game && JSON_game.Textures ? JSON_game.Textures.length : 0;
+                var got = 0, all = 0, done = 0;
+                t.forEach(function (x) {
+                    got += x[0];
+                    all += x[1];
+                    done += x[2] ? 1 : 0;
+                });
+                // pages whose size isn't known yet (not started, or no Content-Length) count as the average known one
+                var sized = t.filter(function (x) { return x[1] > 0; }).length;
+                var tex = sized ? Math.min(1, got / (all + ((n - sized) * all) / sized)) : n ? done / n : 0;
+                var c = barkley_count,
+                    rest = c.total > n ? Math.max(0, c.loaded - done) / (c.total - n) : 0;
+                var f = n ? 0.9 * tex + 0.1 * rest : c.total ? c.loaded / c.total : 0;
+                var p = Math.floor(100 * Math.min(1, f));
+                if (!e || p <= barkley_shown) return;
+                barkley_shown = p;
+                e.style.setProperty("--p", p + "%");
+            }
+        </script>
+
+        <!-- Run the game code -->
+        <script type="text/javascript" src="html5game/BarkleyLTS.js?cachebust=1934600664"></script>
+
+        <!-- Builtin injector for injecting runner path -->
+        
+
+        <script>
+            window.onload = () => {
+                const start = document.getElementById("start");
+                // Before Start, keys stay away from the game (the one that starts it would read as pressed in its first
+                // step). Any character key, Enter or an arrow starts, unless the install prompt is up.
+                const key = (e) => {
+                    if (barkley.started) return removeEventListener("keydown", key, true);
+                    const install = document.getElementById("install");
+                    // the Controls panel is testing these keys; nothing here may act on them or start the game
+                    if (document.getElementById("controls-panel")) return;
+                    if (e.ctrlKey || e.metaKey || e.altKey || (install && !install.hidden)) return;
+                    e.stopImmediatePropagation();
+                    if (start.disabled || !(e.key.length === 1 || e.key === "Enter" || e.key.startsWith("Arrow"))) return;
+                    // Enter or Space on the focused Controls link opens it, as clicking it does
+                    if (e.target.id === "controls-go" && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        return barkley.controls();
+                    }
+                    e.preventDefault();
+                    // Enter or Space on the focused "Start from the title screen" link does what clicking it does
+                    barkley.start(e.target.id === "fresh-go" && (e.key === "Enter" || e.key === " "));
+                };
+                addEventListener("keydown", key, true);
+                barkley_audio_fix();
+                if (window.__fuzz) return barkley.ready();
+                barkley.inited = true;
+                GameMaker_Init();
+                const timer = setInterval(() => (start.disabled ? barkley_show() : clearInterval(timer)), 100);
+            };
+        </script>
+
+        <!-- Builtin injector for injecting google analytics code -->
+        
+
+        <!-- Custom BodyEnd code is injected here -->
+        
+    </body>
+
+    <!-- Custom PostBody code is injected here -->
+    
+</html>
